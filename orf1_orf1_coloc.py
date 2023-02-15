@@ -4,6 +4,7 @@ import glob
 from read_roi import read_roi_zip, read_roi_file
 from detect_spots import zstack_spot_finding
 from skimage import io
+import numpy as np
 
 home_dir = f"{os.path.expanduser('~')}/Dropbox (NYU Langone Health)/mac_files"
 img_dir = "holtlab/data_and_results/LINE1/ORF1-ORF1 Colocalization"
@@ -91,3 +92,4 @@ full_random_df.index = range(len(full_random_df))
 # Save final output files
 full_df.to_csv(f"{output_dir}/{spot_type}-all_spots.txt", sep='\t')
 full_random_df.to_csv(f"{output_dir}/{spot_type}-all_random_spots.txt", sep='\t')
+

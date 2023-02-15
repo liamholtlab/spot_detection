@@ -120,3 +120,4 @@ full_loc_counts_df.index = range(len(full_loc_counts_df))
 full_df.to_csv(f"{output_dir}/{spot_type}-all_spots.txt", sep='\t')
 full_random_df.to_csv(f"{output_dir}/{spot_type}-all_random_spots.txt", sep='\t')
 full_loc_counts_df.to_csv(f"{output_dir}/{spot_type}-spot_counts.txt", sep='\t')
+
