@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import glob
-from read_roi import read_roi_zip
+from read_roi import read_roi_zip, read_roi_file
 from detect_spots import zstack_spot_finding
 from skimage import io
 
@@ -12,7 +12,7 @@ img_dir = "holtlab/data_and_results/LINE1/RNA-ORF1 Colocalization/spot_counting/
 input_dir = f"{home_dir}/{img_dir}/dox"
 output_dir = f"{input_dir}/results"
 
-roi_suffix = "RoiSet"
+roi_suffix = "_RoiSet"
 
 spot_type = "RNA" #"ORF1" #"RNA"
 nuclei_channel = 1
@@ -22,6 +22,7 @@ if(spot_type == "RNA"):
     # for RNA (ch 0) spots:
     spot_channel = 0
     intensity_channels = [3,]
+    my_seed=0
 
     th={'zstack_001': 0.02, 'zstack_002': 0.02, 'zstack_003': 0.02, 'zstack_004': 0.02, 'zstack_005': 0.005}
     th2 = None
@@ -33,6 +34,7 @@ elif(spot_type == "ORF1"):
     # for ORF1 (ch 3) spots:
     spot_channel = 3
     intensity_channels = [0,]
+    my_seed=1
 
     th = {'zstack_001': 0.025, 'zstack_002': 0.03, 'zstack_003': 0.075, 'zstack_004': 0.08, 'zstack_005': 0.075}
     th2 = None
@@ -51,7 +53,10 @@ full_loc_counts_df = pd.DataFrame()
 
 for movie_file in movie_files:
     file_root = os.path.splitext(os.path.split(movie_file)[1])[0]
-    rois = read_roi_zip(f"{input_dir}/{file_root}_{roi_suffix}.zip")
+    if (os.path.exists(f"{input_dir}/{file_root}{roi_suffix}.zip")):
+        rois = read_roi_zip(f"{input_dir}/{file_root}{roi_suffix}.zip")
+    else:
+        rois = read_roi_file(f"{input_dir}/{file_root}{roi_suffix}.roi")
     full_stack = io.imread(f"{movie_file}")
 
     print(movie_file)
@@ -62,10 +67,15 @@ for movie_file in movie_files:
     spot_stack = full_stack[:, spot_channel, :, :]
     nuclei_stack = full_stack[:, nuclei_channel, :, :]
 
+    intensity_stacks=[]
+    ch_names=[]
+    for ch in intensity_channels:
+        ch_names.append(str(ch))
+        intensity_stacks.append(full_stack[:,ch,:,:])
+
     # find spots
-    blobs_df = zstack_spot_finding.find_spots(full_stack, rois,
-                                              labels_file_name=f"{output_dir}/{file_root}-roi_labels.tif",
-                                              spot_ch=spot_channel, nucl_ch=nuclei_channel, intens_chs=intensity_channels,
+    blobs_df = zstack_spot_finding.find_spots(spot_stack, nuclei_stack, intensity_stacks, ch_names,
+                                              rois, labels_file_name=f"{output_dir}/{file_root}-roi_labels.tif",
                                               blob_th=th[file_root], blob_th_rel=th2,
                                               blob_min_s=min_sigma[file_root], blob_max_s=max_sigma[file_root])
 
@@ -80,10 +90,8 @@ for movie_file in movie_files:
                                             file_name=f"{output_dir}/{file_root}-{spot_type}-marked_blobs-nucl.tif")
 
     # randomize spots
-    random_blobs_df = zstack_spot_finding.randomize_spots_with_loc(full_stack, rois, blobs_df, loc_counts_df,
-                                                          spot_ch=spot_channel,
-                                                          nucl_ch=nuclei_channel,
-                                                          intens_chs=intensity_channels)
+    random_blobs_df = zstack_spot_finding.randomize_spots_with_loc(spot_stack, nuclei_stack, intensity_stacks, ch_names,
+                                                                   rois, blobs_df, loc_counts_df, seed=my_seed)
 
     # save random blobs on movie for checking - location only
     zstack_spot_finding.save_blobs_on_movie(random_blobs_df, nuclei_stack,

@@ -6,6 +6,7 @@ import pandas as pd
 import random
 from sklearn.cluster import KMeans
 from skimage import filters
+import sys
 
 def save_blobs_on_movie(blobs_df, movie, file_name):
     # on each slice, label blobs: combine as one movie
@@ -117,13 +118,12 @@ def make_mask_from_rois(rois, img_shape):
     return final_img, label_to_roi
 
 
-def find_spots(full_stack, rois, labels_file_name='',
-               spot_ch=3, nucl_ch=1, intens_chs=[0,],
+def find_spots(spot_stack, nuclei_stack, intensity_stacks, intensity_ch_names,
+               rois, labels_file_name='',
                blob_th=0.02, blob_th_rel=None,
                blob_min_s=1, blob_max_s=3):
 
     # (1) Detect blobs
-    spot_stack = full_stack[:, spot_ch, :, :]
     spot_stack_rescl = exposure.rescale_intensity(spot_stack)
 
     print("Detecting blobs...")
@@ -133,10 +133,7 @@ def find_spots(full_stack, rois, labels_file_name='',
 
     print("Finished...")
 
-    # (2) Pull out the nucleus channel
-    nuclei_stack = full_stack[:, nucl_ch, :, :]
-
-    # (3) go through blobs, label with the ROI, get the intensity of nuclei channel and the other channel
+    # (2) go through blobs, label with the ROI, get the intensity of nuclei channel and the other channels
     roi_mask, labels_dict = make_mask_from_rois(rois, spot_stack[0].shape)
     if(labels_file_name):
         io.imsave(labels_file_name, roi_mask)
@@ -158,8 +155,8 @@ def find_spots(full_stack, rois, labels_file_name='',
         mean_intens_arr.append(np.mean(nuclei_stack[p][rr, cc]))
         mean_intens_arr.append(np.mean(spot_stack[p][rr, cc]))
 
-        for ch in intens_chs:
-            mean_intens_arr.append(np.mean(full_stack[p][ch][rr, cc]))
+        for ch_stack in intensity_stacks:
+            mean_intens_arr.append(np.mean(ch_stack[p][rr, cc]))
 
         # which ROI?
         label = roi_mask[int(r)][int(c)]
@@ -172,25 +169,33 @@ def find_spots(full_stack, rois, labels_file_name='',
         data_arr.extend(mean_intens_arr)
         blobs_arr.append(data_arr)
 
-    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'label', 'roi', 'nuclei_ch_intensity' 'spot_ch_intensity',]
-    for ch in intens_chs:
-        cols.append(f"coloc_ch{ch}_intensity")
+    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'label', 'roi', 'nuclei_ch_intensity', 'spot_ch_intensity',]
+    for name in intensity_ch_names:
+        cols.append(f"coloc_ch{name}_intensity")
     return pd.DataFrame(blobs_arr, columns=cols)
 
 
-def place_spots(coords, n, spot_r, z_dist, type, th, nuclei_stack):
+def place_spots(coords, n, spot_r, z_dist, type, th, nuclei_stack, seed):
     # Places random spots with given numbers specific to cyto or nucl based on threshold
 
     random_spots_dict = {}
     coords_choice = coords.copy()
     num_spots_placed=0
+
+    random.seed(seed)
+    seeds = random.sample(range(sys.maxsize),(n*2*1000))
+    seed_i=0
     while(num_spots_placed < n):
 
+        random.seed(seeds[seed_i])
+        seed_i+=1
         cur_coords = random.choice(coords_choice)
         r=int(cur_coords[0])
         c=int(cur_coords[1])
 
         # select z-channel for spot
+        random.seed(seeds[seed_i])
+        seed_i += 1
         p = int(random.choice(z_dist.to_numpy()))
 
         if((p, r, c) in random_spots_dict):
@@ -218,19 +223,20 @@ def place_spots(coords, n, spot_r, z_dist, type, th, nuclei_stack):
     return random_spots_dict.keys()
 
 
-def randomize_spots(full_stack, rois, real_spot_df, spot_ch=3, nucl_ch=1, intens_chs=[0, ]):
+def randomize_spots(spot_stack, nuclei_stack, intensity_stacks, intensity_ch_names,
+                    rois, real_spot_df, seed=0):
     # read in the roi and get the list of roi coordinates.
     # draw X number of random spots on the roi region, where X is same as detected spot count for each roi
     # spot radius will be uniform: the 'size' of the spots as quantified by blob_log is almost always the same
     # get the intensity of nuclei and RNA channels for each spot and save to file
 
-    nuclei_stack = full_stack[:, nucl_ch, :, :]
-    spot_stack = full_stack[:, spot_ch, :, :]
-
     blobs_arr = []
 
     coords_dict = get_roi_coords(rois, nuclei_stack[0].shape)
-    for roi in coords_dict.keys():
+    random.seed(seed)
+    roi_seeds = random.sample(range(sys.maxsize), len(coords_dict.keys()))
+    seed_i = 0
+    for roi_i,roi in enumerate(coords_dict.keys()):
         roi_coords = coords_dict[roi]
 
         num_spots = real_spot_df[real_spot_df.roi==roi].shape[0]
@@ -239,7 +245,8 @@ def randomize_spots(full_stack, rois, real_spot_df, spot_ch=3, nucl_ch=1, intens
             radius = real_spot_df[real_spot_df.roi == roi]['radius'].mean()
             z_ch_dist = real_spot_df[real_spot_df.roi == roi]['plane (z)']
 
-            spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, "", 0, nuclei_stack)
+            spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, "", 0, nuclei_stack, roi_seeds[seed_i])
+            seed_i += 1
             for (p, r, c) in spot_positions:
                 # get 2d blob coordinates (as a disk)
                 rr, cc = draw.disk((r, c), int(radius), shape=nuclei_stack[0].shape)
@@ -249,31 +256,32 @@ def randomize_spots(full_stack, rois, real_spot_df, spot_ch=3, nucl_ch=1, intens
                 mean_intens_arr.append(np.mean(nuclei_stack[p][rr, cc]))
                 mean_intens_arr.append(np.mean(spot_stack[p][rr, cc]))
 
-                for ch in intens_chs:
-                    mean_intens_arr.append(np.mean(full_stack[p][ch][rr, cc]))
+                for ch_stack in intensity_stacks:
+                    mean_intens_arr.append(np.mean(ch_stack[p][rr, cc]))
 
                 data_arr = [p, r, c, radius, roi]
                 data_arr.extend(mean_intens_arr)
                 blobs_arr.append(data_arr)
 
-    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'roi', 'nuclei_ch_intensity' 'spot_ch_intensity', ]
-    for ch in intens_chs:
-        cols.append(f"coloc_ch{ch}_intensity")
+    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'roi', 'nuclei_ch_intensity', 'spot_ch_intensity', ]
+    for name in intensity_ch_names:
+        cols.append(f"coloc_ch{name}_intensity")
     return pd.DataFrame(blobs_arr, columns=cols)
 
 
-def randomize_spots_with_loc(full_stack, rois, real_spot_df, loc_th_df, spot_ch=3, nucl_ch=1, intens_chs=[0,]):
+def randomize_spots_with_loc(spot_stack, nuclei_stack, intensity_stacks, intensity_ch_names,
+                             rois, real_spot_df, loc_th_df, seed=0):
     # read in the roi and get the list of roi coordinates.
     # draw X number of random spots on the roi region, where X is same as detected spot count for each roi
     # spot radius will be uniform: the 'size' of the spots as quantified by blob_log is almost always the same
     # get the intensity of nuclei, spot, and coloc channels for each spot and save to file
 
-    nuclei_stack = full_stack[:, nucl_ch, :, :]
-    spot_stack = full_stack[:, spot_ch, :, :]
-
     blobs_arr = []
 
     coords_dict = get_roi_coords(rois, nuclei_stack[0].shape)
+    random.seed(seed)
+    roi_seeds = random.sample(range(sys.maxsize), len(coords_dict.keys())*2)
+    seed_i=0
     for roi in coords_dict.keys():
         roi_coords = coords_dict[roi]
 
@@ -286,7 +294,8 @@ def randomize_spots_with_loc(full_stack, rois, real_spot_df, loc_th_df, spot_ch=
                 radius = cur_spot_df[cur_spot_df.roi == roi]['radius'].mean()
                 z_ch_dist = cur_spot_df[cur_spot_df.roi == roi]['plane (z)']
 
-                spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, loc, cutoff, nuclei_stack)
+                spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, loc, cutoff, nuclei_stack, roi_seeds[seed_i])
+                seed_i+=1
                 for (p,r,c) in spot_positions:
                     rr, cc = draw.disk((r, c), int(radius), shape=nuclei_stack[0].shape)
 
@@ -295,16 +304,16 @@ def randomize_spots_with_loc(full_stack, rois, real_spot_df, loc_th_df, spot_ch=
                     mean_intens_arr.append(np.mean(nuclei_stack[p][rr, cc]))
                     mean_intens_arr.append(np.mean(spot_stack[p][rr, cc]))
 
-                    for ch in intens_chs:
-                        mean_intens_arr.append(np.mean(full_stack[p][ch][rr, cc]))
+                    for ch_stack in intensity_stacks:
+                        mean_intens_arr.append(np.mean(ch_stack[p][rr, cc]))
 
                     data_arr = [p, r, c, radius, loc, roi]
                     data_arr.extend(mean_intens_arr)
                     blobs_arr.append(data_arr)
 
-    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'location', 'roi', 'nuclei_ch_intensity' 'spot_ch_intensity', ]
-    for ch in intens_chs:
-        cols.append(f"coloc_ch{ch}_intensity")
+    cols = ['plane (z)', 'row (y)', 'col (x)', 'radius', 'location', 'roi', 'nuclei_ch_intensity', 'spot_ch_intensity', ]
+    for name in intensity_ch_names:
+        cols.append(f"coloc_ch{name}_intensity")
     return pd.DataFrame(blobs_arr, columns=cols)
 
 
