@@ -4,7 +4,7 @@ import glob
 from read_roi import read_roi_zip, read_roi_file
 from detect_spots import zstack_spot_finding
 from skimage import io
-import numpy as np
+import re
 
 home_dir = f"{os.path.expanduser('~')}/Dropbox (NYU Langone Health)/mac_files"
 img_dir = "holtlab/data_and_results/LINE1/ORF1-ORF1 Colocalization"
@@ -14,13 +14,42 @@ output_dir = f"{input_dir}/results"
 
 roi_suffix = ""
 
-spot_type = "ORF1-561"  # only one spot detection here
+spot_type = "ORF1-646" #"ORF1-561"
 nuclei_channel = 0
 
 if (spot_type == "ORF1-561"):
 
     spot_channel = 2
-    intensity_channels = [1,3]
+    intensity_channels = [1, 3]
+    check_img = ''
+
+    th = 0.04
+    th2 = None
+    min_sigma = 1
+    max_sigma = 3
+
+elif(spot_type == 'ORF1-646'):
+
+    spot_channel = 1
+    intensity_channels = [2, 3]
+
+    check_img = '' #'HeLaSS16txSS43mNG2_JF549646_DAPI_Well3_Z007'
+
+    th_dict = {'Well1_Z001': 0.06, 'Well1_Z006': 0.06, 'Well3_Z003': 0.06, 'Well3_Z007': 0.06,
+               'Well3_Z001': 0.07, 'Well3_Z002': 0.07,
+               'Well1_Z002': 0.08, 'Well1_Z003': 0.08, 'Well1_Z005': 0.08, 'Well2_Z001': 0.08, 'Well2_Z002': 0.08,
+               'Well2_Z003': 0.08, 'Well2_Z004': 0.08, 'Well2_Z005': 0.08, 'Well2_Z006': 0.08, 'Well3_Z005': 0.08,
+               'Well1_Z004': 0.09, 'Well2_Z007': 0.10, 'Well3_Z006': 0.15}
+    th2 = None
+    min_sigma = 1
+    max_sigma = 3
+
+elif(spot_type == 'mNG2'):
+
+    spot_channel = 3
+    intensity_channels = [1, 2]
+
+    check_img = ''
 
     th = 0.04
     th2 = None
@@ -40,6 +69,9 @@ full_loc_counts_df = pd.DataFrame()
 for movie_file in movie_files:
     file_root = os.path.splitext(os.path.split(movie_file)[1])[0]
 
+    if(check_img != '' and check_img != file_root):
+        continue
+
     if(os.path.exists(f"{input_dir}/{file_root}{roi_suffix}.zip")):
         rois = read_roi_zip(f"{input_dir}/{file_root}{roi_suffix}.zip")
     else:
@@ -57,6 +89,13 @@ for movie_file in movie_files:
     for ch in intensity_channels:
         ch_names.append(str(ch))
         intensity_stacks.append(full_stack[:, :, :, ch])
+
+    if(spot_type == 'ORF1-646'):
+        mo=re.search(r'Well[123]_Z00\d$', file_root)
+        if(mo):
+            th = th_dict[mo.group(0)]
+        else:
+            print(f"Error: did not match file: {file_root}")
 
     # find spots
     blobs_df = zstack_spot_finding.find_spots(spot_stack, nuclei_stack, intensity_stacks, ch_names,
