@@ -318,7 +318,15 @@ def randomize_spots_with_loc(spot_stack, nuclei_stack, intensity_stacks, intensi
 
 
 def locate_spots(spot_df):
+    """
+    Locate spots in the given spot dataframe to nucleus or cytoplasm based on nucleus channel intensity.
 
+    Parameters:
+    spot_df (DataFrame): The spot dataframe containing spot information.
+
+    Returns:
+    tuple: A tuple containing the updated spot dataframe and an output dataframe containing counts in nucleus and cytoplasm.
+    """
     spot_df['location']=''
     output_arr = []
     for roi in spot_df.roi.unique():
