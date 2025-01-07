@@ -245,7 +245,8 @@ def randomize_spots(spot_stack, nuclei_stack, intensity_stacks, intensity_ch_nam
             radius = real_spot_df[real_spot_df.roi == roi]['radius'].mean()
             z_ch_dist = real_spot_df[real_spot_df.roi == roi]['plane (z)']
 
-            spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, "", 0, nuclei_stack, roi_seeds[seed_i])
+            spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, "", 0, nuclei_stack,
+                                         roi_seeds[seed_i])
             seed_i += 1
             for (p, r, c) in spot_positions:
                 # get 2d blob coordinates (as a disk)
@@ -294,7 +295,8 @@ def randomize_spots_with_loc(spot_stack, nuclei_stack, intensity_stacks, intensi
                 radius = cur_spot_df[cur_spot_df.roi == roi]['radius'].mean()
                 z_ch_dist = cur_spot_df[cur_spot_df.roi == roi]['plane (z)']
 
-                spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, loc, cutoff, nuclei_stack, roi_seeds[seed_i])
+                spot_positions = place_spots(roi_coords, num_spots, radius, z_ch_dist, loc, cutoff, nuclei_stack,
+                                             roi_seeds[seed_i])
                 seed_i+=1
                 for (p,r,c) in spot_positions:
                     rr, cc = draw.disk((r, c), int(radius), shape=nuclei_stack[0].shape)
@@ -340,7 +342,7 @@ def locate_spots(spot_df):
             else:
                 th1 = (data[kmeans.labels_ == 1].max() + data[kmeans.labels_ == 0].min()) / 2
 
-            th2 = filters.threshold_otsu(data)
+            th2 = filters.threshold_otsu(data.to_numpy())
 
             final_th = (th1+th2)/2
 
